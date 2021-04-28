@@ -1,0 +1,24 @@
+Package: quafle
+Title: Quantifying Usage of Alternative First and Last Exons
+Version: 0.99.0
+Authors@R: person("Fursham", "Hamid", email = "fursham.h@gmail.com", role = c("aut", "cre"))
+Depends: R (>= 4.0)
+Type: Package
+Description: More about what it does (maybe more than one line)
+    Use four spaces when indenting paragraphs within the Description.
+License: What license is it under?
+Encoding: UTF-8
+LazyData: true
+Imports:
+    dplyr (>= 1.0),
+    GenomicRanges (>= 1.42),
+    IRanges (>= 2.24),
+    rtracklayer (>= 1.50), 
+    tidyr (>= 1.1), 
+    methods (>= 4.0),
+    S4Vectors (>= 0.28),
+    stringr (>= 1.4),
+    rlang (>= 0.4)
+Suggests: 
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3
