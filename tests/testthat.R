@@ -1,4 +1,4 @@
 library(testthat)
-library(AFLanalyze)
+library(quafle)
 
-test_check("AFLanalyze")
+test_check("quafle")

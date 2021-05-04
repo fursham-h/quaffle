@@ -1,7 +1,6 @@
 test_that("Index build correctly", {
-    out <- buildAFLindex(system.file("extdata", "wtap.gtf", package = "AFLanalyze"))
-    expect_equal(start(out), c(12994063, 12992623, 12992309, 12992077, 12985916,
-                               12983457, 12981751, 12980855, 12972685, 12966796))
-    expect_equal(out$pos, c("start", "end"  , "start", "start", "start",
-                            "start", "end"  , "end"  , "end"  , "end"  ))
+    out <- buildAFL(system.file("extdata", "wtap.gtf", package = "quafle"))
+    expect_equal(BiocGenerics::start(out), c(12992309, 12992077, 12972685, 12966796))
+    expect_equal(out$type, c("AF", "AF"  , "AL", "AL" ))
+    expect_equal(out$coding, c("FALSE", "FALSE"  , "TRUE", "TRUE"))
 })
