@@ -1,7 +1,5 @@
 #' Build list of alternate first and last exons
 #'
-#' @description
-#'
 #' @param x
 #' Path to GTF annotation
 #'
@@ -11,14 +9,25 @@
 #'
 #' @export
 #'
+#' @importFrom dplyr %>%
+#'
 #' @examples
-#' gtf <- system.file("extdata", "wtap.gtf", package = "AFLanalyze")
+#' gtf <- system.file("extdata", "wtap.gtf", package = "quafle")
 #' buildAFL(gtf)
 #'
 buildAFL <- function(x) {
+
+    transcript_id <- strand <- start <- afl.seqnames <- afl.start <- NULL
+    afl.end <- afl.strand <- gene_id <- gene_name <- type <- coding <- NULL
+
     # import transcriptome
     rlang::inform("Reading GTF input")
     x <- rtracklayer::import(x)
+    # check for CDS entries
+    assertthat::assert_that(
+        "CDS" %in% unique(x$type),
+        msg = "Input GTF is missing CDS information")
+    x.cds <- x[x$type == "CDS"]
     x <- x[x$type == "exon"]
 
     # get list of first exons from each transcript
@@ -27,6 +36,14 @@ buildAFL <- function(x) {
         range() %>%
         GenomicRanges::resize(1) %>%
         unlist() %>%
+        GenomicRanges::reduce()
+
+    cds.afl <- x.cds %>% as.data.frame() %>%
+        dplyr::group_by(transcript_id) %>%
+        dplyr::arrange(ifelse(strand == "-", dplyr::desc(start), start)) %>%
+        dplyr::filter(dplyr::row_number() == 1 | dplyr::row_number() == dplyr::n()) %>%
+        dplyr::ungroup() %>%
+        GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = T) %>%
         GenomicRanges::reduce()
 
     # get a list of all first and last exons from annotation
@@ -39,17 +56,21 @@ buildAFL <- function(x) {
         GenomicRanges::reduce()
 
     # annotate AF and AL
-    afl$pos <- ifelse(IRanges::overlapsAny(afl, all.start, type = "start") |
+    afl$type <- ifelse(IRanges::overlapsAny(afl, all.start, type = "start") |
                           IRanges::overlapsAny(afl, all.start, type = "end"),
                       "AF", "AL")
+    # annotate CDS
+    afl$coding <- ifelse(IRanges::overlapsAny(afl, cds.afl, type = "start") |
+                          IRanges::overlapsAny(afl, cds.afl, type = "end"),
+                      "TRUE", "FALSE")
 
     # annotate gene_id and gene_name of each exons
     afl.labelled <- IRanges::mergeByOverlaps(afl, x) %>%
         as.data.frame() %>%
         dplyr::select(seqnames = afl.seqnames, start = afl.start, end = afl.end,
-                      strand = afl.strand, pos, gene_id, gene_name) %>%
+                      strand = afl.strand, gene_id, gene_name, type, coding) %>%
         dplyr::distinct() %>%
-        dplyr::group_by(gene_id, pos) %>%
+        dplyr::group_by(gene_id, type) %>%
         dplyr::filter(dplyr::n() > 1) %>%
         dplyr::ungroup() %>%
         dplyr::arrange(ifelse(strand == "-", dplyr::desc(start), start)) %>%
@@ -64,6 +85,7 @@ buildAFL <- function(x) {
 #' @param db Database of AFL from buildAFL output
 #' @param dir Path to directory containing BAM files. It is preferable to have
 #' bam indices (.bam.bai) in the same directory.
+#' @param min_read Minimum number of aligned read on AFL exons
 #'
 #' @return
 #' Data-frame containing read count and PSI for each AFL
@@ -72,6 +94,9 @@ buildAFL <- function(x) {
 #'
 #' @examples
 quantAFL <- function(db, dir, min_read = 5) {
+
+    count <- width <- gene_id <- type <- norm_count <- totalnormcount <- NULL
+    strand <-  start <-  seqnames <-  coding <-  PSI <- NULL
 
     # Checks
     # catch missing args
@@ -85,7 +110,9 @@ quantAFL <- function(db, dir, min_read = 5) {
     }
     argnames <- as.character(match.call())[-1]
     assertthat::assert_that(assertthat::is.dir(dir))
-    assertthat::assert_that(is(db, "GRanges"), msg = sprintf("`%s` is not a GRanges object", argnames[1]))
+    assertthat::assert_that(
+        methods::is(db, "GRanges"),
+        msg = sprintf("`%s` is not a GRanges object", argnames[1]))
 
     # retrieve list of bam files
     dir <- stringr::str_remove(dir, "/$")
@@ -113,8 +140,8 @@ quantAFL <- function(db, dir, min_read = 5) {
             GenomicRanges::makeGRangesFromDataFrame(seqnames.field = "rname",
                                                     start.field = "pos", end.field = "pos")
 
-        IRanges::countOverlaps(db, bam.gr)
         rlang::inform(sprintf("\n\tSuccessfully read %s file", x))
+        return(IRanges::countOverlaps(db, bam.gr))
     })
     out <- suppressMessages(out %>%
         dplyr::bind_cols())
@@ -128,16 +155,21 @@ quantAFL <- function(db, dir, min_read = 5) {
         tidyr::gather("sample", "count", names(out)) %>%
         dplyr::mutate(count = ifelse(count < min_read, 0, count)) %>%
         dplyr::mutate(norm_count = count/width) %>%
-        dplyr::group_by(gene_id, sample, pos) %>%
+        dplyr::group_by(gene_id, sample, type) %>%
         dplyr::mutate(totalnormcount = sum(norm_count)) %>%
         dplyr::mutate(PSI = signif(norm_count/totalnormcount, digits = 3)) %>%
         tidyr::replace_na(list(PSI = 0)) %>%
-        dplyr::select(-norm_count, -totalnormcount)
+        dplyr::select(-norm_count, -totalnormcount) %>%
+        dplyr::ungroup() %>%
+        dplyr::group_by(gene_id) %>%
+        dplyr::arrange(ifelse(strand == "-", dplyr::desc(start), start),
+                       type, sample) %>%
+        dplyr::ungroup()
 
     out.comb %>%
-        dplyr::select(seqnames:gene_name, sample,PSI) %>%
+        dplyr::select(seqnames:coding, sample,PSI) %>%
         tidyr::spread(sample, PSI) %>%
-        write.table("QuaflePSI.tsv", sep = '\t', quote = F, row.names = F)
+        utils::write.table("QuaflePSI.tsv", sep = '\t', quote = F, row.names = F)
     return(out.comb)
 
 }
@@ -152,10 +184,16 @@ quantAFL <- function(db, dir, min_read = 5) {
 #' have to be identical to the name of the BAM files (without .BAM extension)
 #'
 #' @return
+#' Data-frame containing differential AFL analysis
 #' @export
 #'
 #' @examples
 diffAFL <- function(psi, a, b) {
+
+    gene_id <- type <- count <- seqnames <- start <- end <- strand <- NULL
+    gene_name <- coding <- group <- totalcount <- PSI <- val <- NULL
+    A <- B <- A.PSI <- B.PSI <- A.totalcount <- B.totalcount <- NULL
+    fisher.pvalue <- deltaPSI <- fisher.FDR <- A.count <- B.count <- NULL
 
     # Checks
     # catch missing args
@@ -175,10 +213,10 @@ diffAFL <- function(psi, a, b) {
     psi %>%
         dplyr::filter(sample %in% c(a,b)) %>%
         dplyr::mutate(group = ifelse(sample %in% a, "A", "B")) %>%
-        dplyr::group_by(gene_id, sample, pos) %>%
+        dplyr::group_by(gene_id, sample, type) %>%
         dplyr::mutate(totalcount = sum(count)) %>%
         dplyr::ungroup() %>%
-        dplyr::group_by(seqnames, start, end, strand, pos, gene_name, group) %>%
+        dplyr::group_by(seqnames, start, end, strand, gene_id, gene_name, type,coding, group) %>%
         dplyr::summarise(count = sum(count), totalcount = sum(totalcount), mean_PSI = mean(PSI)) %>%
         tidyr::unite(val, c("count", "totalcount", "mean_PSI"), sep = "_") %>%
         tidyr::spread(group, val) %>%
@@ -187,10 +225,14 @@ diffAFL <- function(psi, a, b) {
         tidyr::separate(B, c("B.count", "B.totalcount", "B.PSI"), convert = T, "_") %>%
         dplyr::mutate(deltaPSI = B.PSI - A.PSI) %>%
         dplyr::rowwise() %>%
-        dplyr::mutate(fisher.pvalue = fisher.test(rbind(c(A.count, A.totalcount), c(B.count, B.totalcount)))$p.value) %>%
+        dplyr::mutate(fisher.pvalue = stats::fisher.test(rbind(c(A.count, A.totalcount), c(B.count, B.totalcount)))$p.value) %>%
         dplyr::ungroup() %>%
-        dplyr::mutate(fisher.FDR = p.adjust(fisher.pvalue, method = "fdr")) %>%
-        dplyr::select(seqnames:gene_name, A.PSI, B.PSI, deltaPSI, fisher.pvalue, fisher.FDR)
+        dplyr::mutate(fisher.FDR = stats::p.adjust(fisher.pvalue, method = "fdr")) %>%
+        dplyr::select(seqnames:coding, A.PSI, B.PSI, deltaPSI, fisher.pvalue, fisher.FDR) %>%
+        dplyr::group_by(gene_id) %>%
+        dplyr::arrange(ifelse(strand == "-", dplyr::desc(start), start),
+                       type) %>%
+        dplyr::ungroup()
 }
 
 
