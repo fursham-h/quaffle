@@ -6,7 +6,7 @@ Depends: R (>= 4.0)
 Type: Package
 Description: More about what it does (maybe more than one line)
     Use four spaces when indenting paragraphs within the Description.
-License: What license is it under?
+License: file LICENSE
 Encoding: UTF-8
 LazyData: true
 Imports:
@@ -18,7 +18,12 @@ Imports:
     methods (>= 4.0),
     S4Vectors (>= 0.28),
     stringr (>= 1.4),
-    rlang (>= 0.4)
+    rlang (>= 0.4),
+    BiocParallel (>= 1.24),
+    Rsamtools (>= 2.6),
+    assertthat(>= 0.2),
+    BiocGenerics (>= 0.36)
 Suggests: 
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
+RoxygenNote: 7.1.1
