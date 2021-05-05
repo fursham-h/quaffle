@@ -10,6 +10,7 @@
 #' @export
 #'
 #' @importFrom dplyr %>%
+#' @importFrom S4Vectors DataFrame
 #'
 #' @examples
 #' gtf <- system.file("extdata", "wtap.gtf", package = "quafle")
