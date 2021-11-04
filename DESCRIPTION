@@ -1,4 +1,4 @@
-Package: quafle
+Package: quaffle
 Title: Quantifying Usage of Alternative First and Last Exons
 Version: 0.99.0
 Authors@R: person("Fursham", "Hamid", email = "fursham.h@gmail.com", role = c("aut", "cre"))
