@@ -1,4 +1,4 @@
-# **quafle**: Quantifying Usage of Alternative First and Last Exons
+# **quaffle**: Quantifying Usage of Alternative First and Last Exons
 
 ## How to install
 ```r
@@ -30,6 +30,15 @@ afl.psi <- quantAFL(afl.db, bams)
 a <- c("sample_A_1", "sample_A_2")
 b <- c("sample_B_1", "sample_B_2")
 afl.diff <- diffAFL(afl.psi, a, b)
+
+# Optional step: Retrieving exon sequence
+## Load genome
+library(BSgenome.Mmusculus.UCSC.mm10)
+
+# run function
+seq <- getAFLseq(afl.diff, Mmusculus)
+
+
 
 ```
 
