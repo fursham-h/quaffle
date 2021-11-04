@@ -75,6 +75,33 @@ buildAFL <- function(x) {
         dplyr::ungroup() %>%
         dplyr::arrange(ifelse(strand == "-", dplyr::desc(start), start)) %>%
         GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = T)
+    afl.labelled$effectivecoord <- paste0(GenomeInfoDb::seqnames(afl.labelled),
+                                          ":",
+                                          BiocGenerics::start(afl.labelled),
+                                          "-",
+                                          BiocGenerics::end(afl.labelled))
+
+    rlang::inform("Extracting effective coordinates")
+    int.exons <- x %>% as.data.frame() %>%
+        dplyr::group_by(transcript_id) %>%
+        dplyr::arrange(ifelse(strand == "-", dplyr::desc(start), start)) %>%
+        dplyr::filter(dplyr::row_number() != 1 & dplyr::row_number() != dplyr::n()) %>%
+        dplyr::ungroup() %>%
+        GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = T) %>%
+        GenomicRanges::reduce()
+
+    internal <- IRanges::findOverlapPairs(afl.labelled, int.exons)
+    exclude <- end(internal@second) < end(internal@first) & start(internal@second) > start(internal@first)
+    internal <- internal[!exclude]
+    changed <- IRanges::findOverlaps(internal@first,
+                            afl.labelled, type = "equal",
+                            select = "first")
+    internal.setdiff <- GenomicRanges::psetdiff(internal)
+    afl.labelled$effectivecoord[changed] <- paste0(GenomeInfoDb::seqnames(internal.setdiff),
+                                          ":",
+                                          BiocGenerics::start(internal.setdiff),
+                                          "-",
+                                          BiocGenerics::end(internal.setdiff))
 
     return(afl.labelled)
 }
@@ -153,7 +180,7 @@ quantAFL <- function(db, dir, min_read = 5) {
     out.comb <- as.data.frame(db) %>%
         dplyr::bind_cols(out) %>%
         tidyr::gather("sample", "count", names(out)) %>%
-        dplyr::mutate(count = ifelse(count < min_read, 0, count)) %>%
+        dplyr::mutate(state = ifelse(count < min_read, "LOW", "OK")) %>%
         dplyr::mutate(norm_count = count/width) %>%
         dplyr::group_by(gene_id, sample, type) %>%
         dplyr::mutate(totalnormcount = sum(norm_count)) %>%
@@ -167,7 +194,7 @@ quantAFL <- function(db, dir, min_read = 5) {
         dplyr::ungroup()
 
     out.comb %>%
-        dplyr::select(seqnames:coding, sample,PSI) %>%
+        dplyr::select(seqnames:effectivecoord, sample,PSI) %>%
         tidyr::spread(sample, PSI) %>%
         utils::write.table("QuaflePSI.tsv", sep = '\t', quote = F, row.names = F)
     return(out.comb)
@@ -188,12 +215,12 @@ quantAFL <- function(db, dir, min_read = 5) {
 #' @export
 #'
 #' @examples
-diffAFL <- function(psi, a, b) {
+diffAFL <- function(psi, a, b, min_samples = 2, adjust.methods = "bonferroni") {
 
     gene_id <- type <- count <- seqnames <- start <- end <- strand <- NULL
     gene_name <- coding <- group <- totalcount <- PSI <- val <- NULL
     A <- B <- A.PSI <- B.PSI <- A.totalcount <- B.totalcount <- NULL
-    fisher.pvalue <- deltaPSI <- fisher.FDR <- A.count <- B.count <- NULL
+    p_val <- deltaPSI <- adj_p_val <- A.count <- B.count <- NULL
 
     # Checks
     # catch missing args
@@ -216,23 +243,30 @@ diffAFL <- function(psi, a, b) {
         dplyr::group_by(gene_id, sample, type) %>%
         dplyr::mutate(totalcount = sum(count)) %>%
         dplyr::ungroup() %>%
-        dplyr::group_by(seqnames, start, end, strand, gene_id, gene_name, type,coding, group) %>%
+        dplyr::group_by(seqnames, start, end, strand, gene_id, gene_name, type,coding, group, effectivecoord) %>%
+        dplyr::filter(sum(state == "OK") >= min_samples) %>%
         dplyr::summarise(count = sum(count), totalcount = sum(totalcount), mean_PSI = mean(PSI)) %>%
         tidyr::unite(val, c("count", "totalcount", "mean_PSI"), sep = "_") %>%
         tidyr::spread(group, val) %>%
         dplyr::ungroup() %>%
+        dplyr::filter(!is.na(A) & !is.na(B)) %>%
         tidyr::separate(A, c("A.count", "A.totalcount", "A.PSI"), convert = T, sep = "_") %>%
         tidyr::separate(B, c("B.count", "B.totalcount", "B.PSI"), convert = T, "_") %>%
         dplyr::mutate(deltaPSI = B.PSI - A.PSI) %>%
         dplyr::rowwise() %>%
-        dplyr::mutate(fisher.pvalue = stats::fisher.test(rbind(c(A.count, A.totalcount), c(B.count, B.totalcount)))$p.value) %>%
+        dplyr::mutate(p_val = stats::fisher.test(rbind(c(A.count, A.totalcount), c(B.count, B.totalcount)))$p.value) %>%
         dplyr::ungroup() %>%
-        dplyr::mutate(fisher.FDR = stats::p.adjust(fisher.pvalue, method = "fdr")) %>%
-        dplyr::select(seqnames:coding, A.PSI, B.PSI, deltaPSI, fisher.pvalue, fisher.FDR) %>%
+        dplyr::mutate(adj_p_val = stats::p.adjust(p_val, method = adjust.methods)) %>%
+        dplyr::select(seqnames:effectivecoord, A.PSI, B.PSI, deltaPSI, p_val, adj_p_val) %>%
         dplyr::group_by(gene_id) %>%
         dplyr::arrange(ifelse(strand == "-", dplyr::desc(start), start),
                        type) %>%
-        dplyr::ungroup()
+        dplyr::ungroup() %>%
+        dplyr::mutate(A.PSI = signif(A.PSI, digits = 3)) %>%
+        dplyr::mutate(B.PSI = signif(B.PSI, digits = 3)) %>%
+        dplyr::mutate(deltaPSI = signif(deltaPSI, digits = 3)) %>%
+        dplyr::mutate(p_val = signif(p_val, digits = 3)) %>%
+        dplyr::mutate(adj_p_val = signif(adj_p_val, digits = 3))
 }
 
 
