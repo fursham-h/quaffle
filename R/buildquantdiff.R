@@ -9,6 +9,7 @@
 #'
 #'
 #' @importFrom dplyr %>%
+#' @importFrom S4Vectors DataFrame
 #'
 .buildAFL <- function(x) {
 
