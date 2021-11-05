@@ -1,4 +1,4 @@
-#' Build list of alternate first and last exons
+#' @title Build list of alternate first and last exons
 #'
 #' @param x
 #' Path to GTF annotation
@@ -7,17 +7,12 @@
 #' GenomicRanges object with coordinates of alternative first and last exons
 #' extracted from the input annotation
 #'
-#' @export
 #'
 #' @importFrom dplyr %>%
 #'
-#' @examples
-#' gtf <- system.file("extdata", "wtap.gtf", package = "quafle")
-#' buildAFL(gtf)
-#'
-buildAFL <- function(x) {
+.buildAFL <- function(x) {
 
-    transcript_id <- strand <- start <- afl.seqnames <- afl.start <- NULL
+    end <- transcript_id <- strand <- start <- afl.seqnames <- afl.start <- NULL
     afl.end <- afl.strand <- gene_id <- gene_name <- type <- coding <- NULL
 
     # import transcriptome
@@ -75,7 +70,7 @@ buildAFL <- function(x) {
         dplyr::ungroup() %>%
         dplyr::arrange(ifelse(strand == "-", dplyr::desc(start), start)) %>%
         GenomicRanges::makeGRangesFromDataFrame(keep.extra.columns = T)
-    afl.labelled$effectivecoord <- paste0(GenomeInfoDb::seqnames(afl.labelled),
+    afl.labelled$effectivecoord <- afl.labelled$coord <- paste0(GenomeInfoDb::seqnames(afl.labelled),
                                           ":",
                                           BiocGenerics::start(afl.labelled),
                                           "-",
@@ -109,41 +104,29 @@ buildAFL <- function(x) {
 
 #' Quantify reads mapping to alternate first and last exons
 #'
-#' @param db Database of AFL from buildAFL output
+#' @param x Quaffle object
 #' @param dir Path to directory containing BAM files. It is preferable to have
 #' bam indices (.bam.bai) in the same directory.
-#' @param min_read Minimum number of aligned read on AFL exons
 #'
 #' @return
 #' Data-frame containing read count and PSI for each AFL
 #'
-#' @export
 #'
-#' @examples
-quantAFL <- function(db, dir, min_read = 5) {
+.countAFL <- function(x, dir) {
 
     count <- width <- gene_id <- type <- norm_count <- totalnormcount <- NULL
     strand <-  start <-  seqnames <-  coding <-  PSI <- NULL
 
     # Checks
     # catch missing args
-    mandargs <- c("db", "dir")
-    passed <- names(as.list(match.call())[-1])
-    if (any(!mandargs %in% passed)) {
-        rlang::abort(paste(
-            "missing values for",
-            paste(setdiff(mandargs, passed), collapse = ", ")
-        ))
-    }
-    argnames <- as.character(match.call())[-1]
-    assertthat::assert_that(assertthat::is.dir(dir))
-    assertthat::assert_that(
-        methods::is(db, "GRanges"),
-        msg = sprintf("`%s` is not a GRanges object", argnames[1]))
 
     # retrieve list of bam files
+    db <- x@rowRanges
     dir <- stringr::str_remove(dir, "/$")
-    bams <- list.files(dir, pattern = ".bam$", full.names = F)
+    bams <- paste0(rownames(x@colData),".bam")
+    if(!all(bams %in% list.files(dir))){
+        rlang::abort(sprintf("BAM files not found at %s directory", dir))
+    }
 
     # Prepare parameters for scanBam
     which <- db
@@ -171,16 +154,34 @@ quantAFL <- function(db, dir, min_read = 5) {
         return(IRanges::countOverlaps(db, bam.gr))
     })
     out <- suppressMessages(out %>%
-        dplyr::bind_cols())
+        dplyr::bind_cols()) %>%
+        as.matrix()
 
     # Correct sample names
-    names(out) <- stringr::str_remove(bams, ".bam$")
+    colnames(out) <- stringr::str_remove(bams, ".bam$")
+    rownames(out) <- db$coord
+    out
+
+
+
+}
+
+#' Quantify PSI metrics
+#'
+#' @param db rowRanges slot from Quaffle object
+#' @param out counts slot from Quaffle object
+#'
+#' @return Matrix containing PSI values
+.quantAFL <- function(db, out){
+
+    width <- gene_id <- type <- norm_count <- totalnormcount <- NULL
+    strand <- start <- coord <- PSI <- NULL
 
     # clean data and calculate normalized counts and PSI
     out.comb <- as.data.frame(db) %>%
-        dplyr::bind_cols(out) %>%
-        tidyr::gather("sample", "count", names(out)) %>%
-        dplyr::mutate(state = ifelse(count < min_read, "LOW", "OK")) %>%
+        dplyr::bind_cols(as.data.frame(out)) %>%
+        tidyr::gather("sample", "count", colnames(out)) %>%
+        #dplyr::mutate(state = ifelse(count < min_read, "LOW", "OK")) %>%
         dplyr::mutate(norm_count = count/width) %>%
         dplyr::group_by(gene_id, sample, type) %>%
         dplyr::mutate(totalnormcount = sum(norm_count)) %>%
@@ -193,80 +194,68 @@ quantAFL <- function(db, dir, min_read = 5) {
                        type, sample) %>%
         dplyr::ungroup()
 
-    out.comb %>%
-        dplyr::select(seqnames:effectivecoord, sample,PSI) %>%
-        tidyr::spread(sample, PSI) %>%
-        utils::write.table("QuaflePSI.tsv", sep = '\t', quote = F, row.names = F)
-    return(out.comb)
 
+    psi <- out.comb %>%
+        dplyr::select(coord, sample, PSI) %>%
+        dplyr::distinct(coord, sample, .keep_all = T) %>%
+        tidyr::spread(sample, PSI) %>%
+        tibble::column_to_rownames("coord") %>%
+        as.matrix()
+
+
+    return(psi)
 }
 
+.diff <- function(x, colData, state, comparison, min_samples, adjust.methods){
 
-#' Differential AFL analysis
-#'
-#' @param psi Dataframe with AFL PSI values from quantAFL output
-#' @param a Character list containing sample names from group "a". Sample names
-#' have to be identical to the name of the BAM files (without .BAM extension)
-#' @param b Character list containing sample names from group "b". Sample names
-#' have to be identical to the name of the BAM files (without .BAM extension)
-#'
-#' @return
-#' Data-frame containing differential AFL analysis
-#' @export
-#'
-#' @examples
-diffAFL <- function(psi, a, b, min_samples = 2, adjust.methods = "bonferroni") {
+    id <- psilist <- B.PSI <- A.PSI <- p_val <- deltaPSI <- adj_p_val <- NULL
+    grouping <- comparison[[3]]
+    A <- comparison[[1]]
+    B <- comparison[[2]]
+    state <- state[rownames(x),]
+    state <- state %>%
+        as.data.frame() %>%
+        #dplyr::mutate(id = rownames(x)) %>%
+        tibble::rownames_to_column("id") %>%
+        tidyr::gather("samples","state", -id)
 
-    gene_id <- type <- count <- seqnames <- start <- end <- strand <- NULL
-    gene_name <- coding <- group <- totalcount <- PSI <- val <- NULL
-    A <- B <- A.PSI <- B.PSI <- A.totalcount <- B.totalcount <- NULL
-    p_val <- deltaPSI <- adj_p_val <- A.count <- B.count <- NULL
+    x <- .posterior(x) %>%
+        as.data.frame() %>%
+        tibble::rownames_to_column("id") %>%
+        tidyr::gather("samples","psi", -id)
 
-    # Checks
-    # catch missing args
-    mandargs <- c("psi", "a", "b")
-    passed <- names(as.list(match.call())[-1])
-    if (any(!mandargs %in% passed)) {
-        rlang::abort(paste(
-            "missing values for",
-            paste(setdiff(mandargs, passed), collapse = ", ")
-        ))
-    }
-    if(!all(c(a,b) %in% psi$sample)) {
-        rlang::abort("Some samples in `a` and `b` are not found in `psi`.")
-    }
 
-    rlang::inform("Performing differential analysis")
-    psi %>%
-        dplyr::filter(sample %in% c(a,b)) %>%
-        dplyr::mutate(group = ifelse(sample %in% a, "A", "B")) %>%
-        dplyr::group_by(gene_id, sample, type) %>%
-        dplyr::mutate(totalcount = sum(count)) %>%
-        dplyr::ungroup() %>%
-        dplyr::group_by(seqnames, start, end, strand, gene_id, gene_name, type,coding, group, effectivecoord) %>%
+
+    colData %>%
+        dplyr::left_join(x, by = "samples") %>%
+        dplyr::left_join(state, by = c("samples", "id")) %>%
+        dplyr::group_by(id, !!!rlang::syms(grouping)) %>%
         dplyr::filter(sum(state == "OK") >= min_samples) %>%
-        dplyr::summarise(count = sum(count), totalcount = sum(totalcount), mean_PSI = mean(PSI)) %>%
-        tidyr::unite(val, c("count", "totalcount", "mean_PSI"), sep = "_") %>%
-        tidyr::spread(group, val) %>%
-        dplyr::ungroup() %>%
-        dplyr::filter(!is.na(A) & !is.na(B)) %>%
-        tidyr::separate(A, c("A.count", "A.totalcount", "A.PSI"), convert = T, sep = "_") %>%
-        tidyr::separate(B, c("B.count", "B.totalcount", "B.PSI"), convert = T, "_") %>%
-        dplyr::mutate(deltaPSI = B.PSI - A.PSI) %>%
+        dplyr::summarise(psilist = list(psi)) %>%
+        tidyr::spread(grouping, psilist) %>%
+        dplyr::filter(!S4Vectors::isEmpty(!!!rlang::syms(A)) & !S4Vectors::isEmpty(!!!rlang::syms(B))) %>%
         dplyr::rowwise() %>%
-        dplyr::mutate(p_val = stats::fisher.test(rbind(c(A.count, A.totalcount), c(B.count, B.totalcount)))$p.value) %>%
+        dplyr::mutate(p_val = this.t.test(!!!rlang::syms(A),!!!rlang::syms(B))) %>%
+        dplyr::mutate(A.PSI = mean(!!!rlang::syms(A)),
+               B.PSI = mean(!!!rlang::syms(B)),
+               deltaPSI = B.PSI-A.PSI) %>%
         dplyr::ungroup() %>%
         dplyr::mutate(adj_p_val = stats::p.adjust(p_val, method = adjust.methods)) %>%
-        dplyr::select(seqnames:effectivecoord, A.PSI, B.PSI, deltaPSI, p_val, adj_p_val) %>%
-        dplyr::group_by(gene_id) %>%
-        dplyr::arrange(ifelse(strand == "-", dplyr::desc(start), start),
-                       type) %>%
-        dplyr::ungroup() %>%
         dplyr::mutate(A.PSI = signif(A.PSI, digits = 3)) %>%
         dplyr::mutate(B.PSI = signif(B.PSI, digits = 3)) %>%
         dplyr::mutate(deltaPSI = signif(deltaPSI, digits = 3)) %>%
         dplyr::mutate(p_val = signif(p_val, digits = 3)) %>%
-        dplyr::mutate(adj_p_val = signif(adj_p_val, digits = 3))
+        dplyr::mutate(adj_p_val = signif(adj_p_val, digits = 3)) %>%
+        dplyr::select(coord = id, A.PSI, B.PSI, deltaPSI, p_val, adj_p_val)
+
+
+}
+
+this.t.test <- function(...){
+    obj <- tryCatch({
+             Bolstad::bayes.t.test(...)$p.value},
+             error=function(cond) return(1))
+    return(obj)
 }
 
 

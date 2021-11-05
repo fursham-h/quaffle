@@ -1,12 +1,48 @@
+#' Retrieve feature sequences
+#'
+#' @param diff
+#' DataFrame containing differential splicing analysis, output from diff() function
+#' @param fasta
+#' XString object containing genome sequence
+#' @param dir
+#' Output directory for FASTA files (Optional)
+#' @param type
+#' Type of sequence to output. Can be "start",
+#' "end" or "exon" which will output the 5' border,
+#' 3' end or the entire exon sequence respectively.
+#' @param exontype
+#' Type of exon to output. Can be "all" (default),
+#' "AF" or "AL" exons.
+#' @param upstream
+#' Amount of padding to extract for upstream sequence (Default: 50bp)
+#' @param downstream
+#' Amount of padding to extract for downstream sequence (Default: 50bp)
+#' @param p.value
+#' Threshold to select for statistically significant events. By default,
+#' it will use a value of 0.05 on adjusted p-values (adj_p_val). See
+#' `use.unadjusted` parameter to select on unadjusted p-values.
+#' @param deltapsi
+#' Threshold to select for statistically significant events. By default,
+#' will select events with 10% change in either samples (0.1)
+#' @param use.undajusted
+#' Boolean value on whether to use unadjusted p-values
+#'
+#' @return
+#' @export
+#'
+#' @examples
 getAFLseq <- function(diff, fasta,
                       dir = NULL,
-                      type = "start",
-                      exontype = "all",
+                      type = c("start","end","exon"),
+                      exontype = c("all", "AF", "AL"),
                       upstream = 50,
                       downstream = 50,
                       p.value = 0.05,
                       deltapsi = 0.1,
                       use.undajusted = F){
+
+
+    p_val <- adj_p_val <- deltaPSI <- NULL
 
     # Checks
     # catch missing args
@@ -26,6 +62,9 @@ getAFLseq <- function(diff, fasta,
             dir.create(dir)
         }
     }
+
+    type <- type[1]
+    exontype <- exontype[1]
 
     # prepare diff
     if(use.undajusted){
@@ -72,8 +111,7 @@ getAFLseq <- function(diff, fasta,
                                     filepath = paste0(dir, "/A.fasta"))
         Biostrings::writeXStringSet(x = B,
                                     filepath = paste0(dir, "/B.fasta"))
-    } else {
-        return(list(A = A, B = B))
     }
+    return(list(A = A, B = B))
 
 }
