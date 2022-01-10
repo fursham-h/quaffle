@@ -9,7 +9,6 @@
 #'
 #'
 #' @importFrom dplyr %>%
-#' @importFrom S4Vectors DataFrame
 #'
 .buildAFL <- function(x) {
 
@@ -147,7 +146,7 @@
         elts <- stats::setNames(Rsamtools::bamWhat(param),
                                 Rsamtools::bamWhat(param))
         lst <- lapply(elts, function(elt) .bamunlist(lapply(bam, "[[", elt)))
-        bam.gr <- do.call("DataFrame", lst) %>%
+        bam.gr <- do.call("data.frame", lst) %>%
             GenomicRanges::makeGRangesFromDataFrame(seqnames.field = "rname",
                                                     start.field = "pos", end.field = "pos")
 
