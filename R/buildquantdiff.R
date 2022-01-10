@@ -87,7 +87,7 @@
         GenomicRanges::reduce()
 
     internal <- IRanges::findOverlapPairs(afl.labelled, int.exons)
-    exclude <- end(internal@second) < end(internal@first) & start(internal@second) > start(internal@first)
+    exclude <- BiocGenerics::end(internal@second) < BiocGenerics::end(internal@first) & BiocGenerics::start(internal@second) > BiocGenerics::start(internal@first)
     internal <- internal[!exclude]
     changed <- IRanges::findOverlaps(internal@first,
                             afl.labelled, type = "equal",
