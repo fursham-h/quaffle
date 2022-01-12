@@ -22,16 +22,97 @@ setClass("QuaffleObject",
 
 
 
-## Generics
-setGeneric("head", function(x, ...) standardGeneric("head"))
+
+
+#setGeneric("head", function(x, ...) standardGeneric("head"))
+
+
+
+
+#' Build alternative first and last exon GRanges
+#'
+#' @param x QuaffleObject
+#' @param ... Path to input GTF
+#'
+#' @return
+#' @export
+#' @docType methods
+#' @rdname build-methods
 setGeneric("build", function(x, ...) standardGeneric("build"))
+
+#' @rdname build-methods
+#' @aliases build
+setMethod("build", "QuaffleObject", function(x, gtf) {
+    x@rowRanges <- .buildAFL(gtf)
+    x
+})
+
+
+#' Quantify AFL reads
+#'
+#' @param x QuaffleObject
+#' @param ... Directory containing BAM files
+#'
+#' @return
+#' @export
+#' @docType methods
+#' @rdname count-methods
 setGeneric("count", function(x, ...) standardGeneric("count"))
+
+#' @rdname count-methods
+#' @aliases count
+setMethod("count", "QuaffleObject", function(x, dir) {
+    x@counts <- .countAFL(x, dir)
+    x
+})
+
+
+
+
 setGeneric("quant", function(x, ...) standardGeneric("quant"))
 setGeneric("colData", function(x) standardGeneric("colData"))
 setGeneric("colData<-", function(x, value) standardGeneric("colData<-"))
 setGeneric("counts", function(x) standardGeneric("counts"))
+
+#' Display PSI values
+#'
+#' @param x
+#'
+#' @return
+#' @export
 setGeneric("psi", function(x) standardGeneric("psi"))
+
+
+
+#' Perform differential AFL analysis
+#'
+#' @param x QuaffleObject
+#' @param ... Contrast vector
+#'
+#' @return
+#' @export
+#' @docType methods
+#' @rdname diff-methods
 setGeneric("diff", function(x, ...) standardGeneric("diff"))
+
+#' @rdname diff-methods
+#' @aliases diff
+setMethod("diff", "QuaffleObject", function(x, contrast, min_samples = 2, methods = "fdr") {
+
+    A.PSI <- NULL
+    coldat <- x@colData
+    coldat <- coldat[coldat[[contrast[3]]] %in% contrast[1:2],]
+    diff <- .diff(x@psi, coldat, x@state, contrast, min_samples, methods)
+
+    ranges <- as.data.frame(x@rowRanges)
+    ranges <- ranges[,c("coord", "effectivecoord", "gene_id",
+                        "gene_name", "strand", "type", "coding")]
+    ranges %>% dplyr::left_join(diff, by = "coord") %>%
+        dplyr::filter(!is.na(A.PSI))
+
+
+})
+
 setGeneric("ranges", function(x, ...) standardGeneric("ranges"))
 
 
@@ -58,16 +139,10 @@ setMethod("show",
 #setMethod("show", "QuaffleObject", function(object) object@psi)
 
 
-setMethod("build", "QuaffleObject", function(x, gtf) {
-    x@rowRanges <- .buildAFL(gtf)
-    x
-})
 
 
-setMethod("count", "QuaffleObject", function(x, dir) {
-    x@counts <- .countAFL(x, dir)
-    x
-})
+
+
 
 setMethod("quant", "QuaffleObject", function(x, min_read) {
     x@psi <- .quantAFL(x@rowRanges, x@counts)
@@ -83,27 +158,19 @@ setMethod("colData<-", "QuaffleObject", function(x, value) {
 })
 
 setMethod("counts", "QuaffleObject", function(x) x@counts)
+#' Display PSI values
+#'
+#' @param QuaffleObject
+#'
+#' @return
+#' @export
 setMethod("psi", "QuaffleObject", function(x) x@psi)
 setMethod("ranges", "QuaffleObject", function(x) x@rowRanges)
 
 
 
 
-setMethod("diff", "QuaffleObject", function(x, contrast, min_samples = 2, methods = "fdr") {
 
-    A.PSI <- NULL
-    coldat <- x@colData
-    coldat <- coldat[coldat[[contrast[3]]] %in% contrast[1:2],]
-    diff <- .diff(x@psi, coldat, x@state, contrast, min_samples, methods)
-
-    ranges <- as.data.frame(x@rowRanges)
-    ranges <- ranges[,c("coord", "effectivecoord", "gene_id",
-                     "gene_name", "strand", "type", "coding")]
-    ranges %>% dplyr::left_join(diff, by = "coord") %>%
-        dplyr::filter(!is.na(A.PSI))
-
-
-})
 
 
 
