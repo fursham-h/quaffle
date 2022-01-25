@@ -13,10 +13,12 @@
 setClass("QuaffleObject",
          slots = c(
              counts = "matrix",
-             rowRanges = "data.frame",
+             rowRanges = "GRanges",
              colData = "data.frame",
              psi = "matrix",
-             state="matrix"
+             state="matrix",
+             exp = "matrix",
+             expstate = "matrix"
          )
 )
 

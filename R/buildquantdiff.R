@@ -62,6 +62,7 @@
     # annotate gene_id and gene_name of each exons
     afl.labelled <- IRanges::mergeByOverlaps(afl, x) %>%
         as.data.frame() %>%
+        dplyr::filter(afl.start==x.start | afl.end==x.end) %>%
         dplyr::select(seqnames = afl.seqnames, start = afl.start, end = afl.end,
                       strand = afl.strand, gene_id, gene_name, type, coding) %>%
         dplyr::distinct() %>%
@@ -141,21 +142,55 @@
         xpath <- paste0(dir, "/", x)
 
 
-        bam <- Rsamtools::scanBam(xpath, param = param)
-        bam <- unname(bam)
-        elts <- stats::setNames(Rsamtools::bamWhat(param),
-                                Rsamtools::bamWhat(param))
-        lst <- lapply(elts, function(elt) .bamunlist(lapply(bam, "[[", elt)))
-        bam.gr <- do.call("data.frame", lst) %>%
-            GenomicRanges::makeGRangesFromDataFrame(seqnames.field = "rname",
-                                                    start.field = "pos", end.field = "pos")
+        bam <- GenomicAlignments::readGAlignments(xpath, param = param)
+        bammod <- bam %>%
+            as.data.frame() %>%
+            dplyr::filter(njunc == 1) %>%
+            dplyr::mutate(njunc = 2)
+        bam.gr <- bam %>%
+            as.data.frame() %>%
+            dplyr::filter(njunc %in% 0:1) %>%
+            dplyr::bind_rows(bammod) %>%
+            dplyr::mutate(cigM = stringr::str_remove(cigar, "[0-9]+[SID]")) %>%
+            dplyr::mutate(cigM = stringr::str_remove(cigM, "[0-9]+[SID]$")) %>%
+            dplyr::mutate(len = ifelse(njunc==2, stringr::str_extract(cigM, "([0-9]+)M$"), stringr::str_extract(cigM, "^([0-9]+)M"))) %>%
+            dplyr::mutate(len = as.numeric(stringr::str_remove(len, "M"))) %>%
+            dplyr::mutate(newstart = ifelse(njunc==2, end-len+1, start)) %>%
+            dplyr::mutate(newend = ifelse(njunc!=2, start+len-1, end)) %>%
+            GenomicRanges::makeGRangesFromDataFrame(seqnames.field = "seqnames",
+                                                    start.field = "newstart", end.field = "newend",
+                                                    strand.field = "strand")
+
+
+
+
+        #countout <- Rsamtools::countBam(xpath, param = param)
+        # bam <- Rsamtools::scanBam(xpath, param = param)
+        # bam <- unname(bam)
+        # elts <- stats::setNames(Rsamtools::bamWhat(param),
+        #                         Rsamtools::bamWhat(param))
+        # lst <- lapply(elts, function(elt) .bamunlist(lapply(bam, "[[", elt)))
+        # bam.gr <- do.call("data.frame", lst) %>%
+        #     GenomicRanges::makeGRangesFromDataFrame(seqnames.field = "rname",
+        #                                             start.field = "pos", end.field = "pos")
 
         rlang::inform(sprintf("\n\tSuccessfully read %s file", x))
-        return(IRanges::countOverlaps(db, bam.gr))
+        # outmat <- c(countout$records)
+        # names(outmat) <- paste0(countout$space, ":", countout$start, "-", countout$end)
+        # outmat <- outmat[db$coord]
+        # return(as.integer(outmat))
+        return(IRanges::countOverlaps(db, bam.gr, ignore.strand = T))
     })
     out <- suppressMessages(out %>%
         dplyr::bind_cols()) %>%
         as.matrix()
+        # dplyr::distinct() %>%
+        # dplyr::mutate(coord = paste0(space, ":", start, "-", end)) %>%
+        # dplyr::mutate(bam = str_remove(file, ".bam$")) %>%
+        # dplyr::select(coord, bam, records) %>%
+        # tidyr::spread(bam, records) %>%
+        # tibble::column_to_rownames("coord") %>%
+        # as.matrix()
 
     # Correct sample names
     colnames(out) <- stringr::str_remove(bams, ".bam$")
@@ -177,6 +212,9 @@
     width <- gene_id <- type <- norm_count <- totalnormcount <- NULL
     strand <- start <- coord <- PSI <- NULL
 
+    outdf <- as.data.frame(out)
+    outdf$coord <- rownames(out)
+
     # clean data and calculate normalized counts and PSI
     out.comb <- as.data.frame(db) %>%
         dplyr::bind_cols(as.data.frame(out)) %>%
@@ -187,7 +225,7 @@
         dplyr::mutate(totalnormcount = sum(norm_count)) %>%
         dplyr::mutate(PSI = signif(norm_count/totalnormcount, digits = 3)) %>%
         tidyr::replace_na(list(PSI = 0)) %>%
-        dplyr::select(-norm_count, -totalnormcount) %>%
+        dplyr::select(-norm_count) %>%
         dplyr::ungroup() %>%
         dplyr::group_by(gene_id) %>%
         dplyr::arrange(ifelse(strand == "-", dplyr::desc(start), start),
@@ -201,6 +239,13 @@
         tidyr::spread(sample, PSI) %>%
         tibble::column_to_rownames("coord") %>%
         as.matrix()
+
+    # genenorm <- out.comb %>%
+    #     dplyr::select(gene_id, sample, totalnormcount) %>%
+    #     dplyr::distinct(gene_id, sample, .keep_all = T) %>%
+    #     tidyr::spread(sample, totalnormcount) %>%
+    #     tibble::column_to_rownames("gene_id") %>%
+    #     as.matrix()
 
 
     return(psi)
@@ -231,6 +276,8 @@
         dplyr::left_join(state, by = c("samples", "id")) %>%
         dplyr::group_by(id, !!!rlang::syms(grouping)) %>%
         dplyr::filter(sum(state == "OK") >= min_samples) %>%
+        dplyr::ungroup() %>%
+        dplyr::group_by(id, !!!rlang::syms(grouping)) %>%
         dplyr::summarise(psilist = list(psi)) %>%
         tidyr::spread(grouping, psilist) %>%
         dplyr::filter(!S4Vectors::isEmpty(!!!rlang::syms(A)) & !S4Vectors::isEmpty(!!!rlang::syms(B))) %>%
