@@ -9,6 +9,7 @@
 #'
 #'
 #' @importFrom dplyr %>%
+#' @importFrom stats end na.omit
 #'
 .buildAFL <- function(x) {
 
