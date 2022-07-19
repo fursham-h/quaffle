@@ -9,6 +9,8 @@
 \arguments{
 \item{x}{Quaffle object}
 
+\item{colData}{Dataframe containing sample info}
+
 \item{dir}{Path to directory containing BAM files. It is preferable to have
 bam indices (.bam.bai) in the same directory.}
 }
