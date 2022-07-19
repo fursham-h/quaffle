@@ -109,6 +109,7 @@
 #' @param x Quaffle object
 #' @param dir Path to directory containing BAM files. It is preferable to have
 #' bam indices (.bam.bai) in the same directory.
+#' @param colData Dataframe containing sample info
 #'
 #' @return
 #' Data-frame containing read count and PSI for each AFL
