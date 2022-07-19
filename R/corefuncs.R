@@ -10,6 +10,7 @@
 #'
 #' @importFrom dplyr %>%
 #' @importFrom stats end na.omit
+#' @importFrom methods is
 #'
 .buildAFL <- function(x) {
 
