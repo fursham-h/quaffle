@@ -15,19 +15,18 @@ Imports:
     IRanges (>= 2.24),
     rtracklayer (>= 1.50), 
     tidyr (>= 1.1), 
-    methods (>= 4.0),
     S4Vectors (>= 0.28),
     stringr (>= 1.4),
     rlang (>= 0.4),
-    BiocParallel (>= 1.24),
-    Rsamtools (>= 2.6),
     assertthat(>= 0.2),
     BiocGenerics (>= 0.36),
-    Bolstad,
     Biostrings,
     GenomeInfoDb,
-    tibble
+    tibble,
+    DoubleExpSeq,
+    Rsubread,
+    SummarizedExperiment
 Suggests: 
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
-RoxygenNote: 7.1.2
+RoxygenNote: 7.2.0
