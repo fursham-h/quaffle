@@ -119,7 +119,7 @@ Bludger <- function(se, group, contrast = c(1,2)){
     }
 
     # check object type
-    if(class(se) != "RangedSummarizedExperiment" | any(names(se@assays) != c("inc", "total"))){
+    if(!is(se, "RangedSummarizedExperiment") | any(names(se@assays) != c("inc", "total"))){
         rlang::abort(str_glue("Unrecognized input object"))
     }
 
