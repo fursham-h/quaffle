@@ -24,7 +24,8 @@
 #' bams <- system.file("extdata/bams", package = "quaffle")
 #'
 #' se <- Quaffle(bams, gtf)
-Quaffle <- function(bamdir, gtf, colData=NULL){
+Quaffle <- function(bamdir, gtf, colData=NULL,
+                    pairedEnd = FALSE, nthreads = 1, strandness = 0){
 
     # run input checks
     mandargs <- c("gtf", "bamdir")
@@ -56,10 +57,9 @@ Quaffle <- function(bamdir, gtf, colData=NULL){
                               row.names = bams)
     }
 
-
     # create se object
     ranges <- .buildAFL(gtf)
-    counts <- .countAFL(ranges, colData, bamdir)
+    counts <- .countAFL(ranges, colData, bamdir, pairedEnd, nthreads, strandness)
     x <- SummarizedExperiment::SummarizedExperiment(
         assays = counts,
         rowRanges = ranges,

@@ -116,7 +116,7 @@
 #' Data-frame containing read count and PSI for each AFL
 #'
 #'
-.countAFL <- function(x, colData, dir) {
+.countAFL <- function(x, colData, dir, pairedEnd, n, strandSpecific) {
 
     count <- width <- gene_id <- type <- norm_count <- totalnormcount <- NULL
     strand <-  start <-  seqnames <-  coding <-  PSI <- NULL
@@ -136,8 +136,14 @@
         as.data.frame() %>%
         dplyr::select(GeneID=effectivecoord, Chr=seqnames, Start=start, End=end, Strand=strand)
 
+    print(file.path(dir, bams))
 
-    subread_out <- suppressMessages(Rsubread::featureCounts(file.path(dir, bams), annot.ext = dbSAF))
+
+    subread_out <- suppressMessages(Rsubread::featureCounts(file.path(dir, bams),
+                                                            annot.ext = dbSAF,
+                                                            isPairedEnd = pairedEnd,
+                                                            nthreads = n,
+                                                            strandSpecific = strandSpecific))
     counts <-  subread_out$counts[db$effectivecoord,]
 
     # normalize counts by exon length (kb)
