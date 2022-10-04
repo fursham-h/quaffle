@@ -201,6 +201,13 @@ Snitch <- function(se, fasta, subset = NULL,
     coord <- GenomicRanges::GRanges(se@rowRanges$effectivecoord,
                                     strand = strand(se@rowRanges))
     coord$effectivecoord <- se@rowRanges$effectivecoord
+    coord$name <- paste0(se@rowRanges$gene_name, "_",
+                         se@rowRanges$effectivecoord,"_",
+                         se@rowRanges$type, "_")
+
+    if(toupper(exontype) != "ALL"){
+        coord <- coord[se@rowRanges$type==exontype]
+    }
 
     if(!is.null(subset)){
         coord <- coord[coord$effectivecoord %in% .getcoords(se@rowRanges, subset)]
@@ -221,7 +228,7 @@ Snitch <- function(se, fasta, subset = NULL,
                                    fix = "start")
 
     seq <- Biostrings::getSeq(fasta, coord)
-    names(seq) <- coord$effectivecoord
+    names(seq) <- coord$name
 
     if(!is.null(outdir)){
         Biostrings::writeXStringSet(x = seq,
