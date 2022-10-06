@@ -101,6 +101,9 @@
                                           "-",
                                           BiocGenerics::end(internal.setdiff))
 
+    effectivewidths <- GenomicRanges::width(GenomicRanges::GRanges(afl.labelled$effectivecoord))
+    afl.labelled <- afl.labelled[effectivewidths> 0]
+
     return(afl.labelled)
 }
 
